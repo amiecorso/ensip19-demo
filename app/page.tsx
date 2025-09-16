@@ -6,7 +6,7 @@ import { useAccount } from "wagmi";
 import { base, mainnet } from "wagmi/chains";
 import { createPublicClient, http, toCoinType } from "viem";
 import { useEffect, useMemo, useState } from "react";
-import L2ReverseRegistrarLookup from "../components/L2ReverseName";
+import L2ReverseRegistrarLookup from "../components/L2ReverseRegistrarLookup";
 
 const L2_REVERSE_REGISTRAR_ABI = [
   {
@@ -21,6 +21,7 @@ const L2_REVERSE_REGISTRAR_ABI = [
 const BASE_L2_REVERSE_REGISTRAR_ADDRESS = "0x0000000000D8e504002cC26E3Ec46D81971C1664" as const;
 
 export default function Home() {
+  // Require a robust mainnet RPC for ENSIP-19 CCIP reads to avoid default node limits
   if (!process.env.NEXT_PUBLIC_MAINNET_RPC_URL) {
     throw new Error("Missing NEXT_PUBLIC_MAINNET_RPC_URL. Set it in .env.local");
   }
@@ -29,7 +30,7 @@ export default function Home() {
   const [ensip19Error, setEnsip19Error] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [l2Name, setL2Name] = useState<string | null>(null);
+  const [l2NameDirectLookup, setL2Name] = useState<string | null>(null);
   const [l2Loading, setL2Loading] = useState(false);
   useEffect(() => setHydrated(true), []);
   useEffect(() => {
@@ -42,53 +43,48 @@ export default function Home() {
       return;
     }
     const mainnetRpcUrl = process.env.NEXT_PUBLIC_MAINNET_RPC_URL!;
+    // ENSIP-19 resolution for base happens on mainnet using coinType for Base
     const mainnetClient = createPublicClient({ chain: mainnet, transport: http(mainnetRpcUrl) });
     const baseClient = createPublicClient({ chain: base, transport: http() });
 
-    const resolve = async () => {
-      setLoading(true);
-      setL2Loading(false);
-      try {
-        const name = await mainnetClient.getEnsName({ address, coinType: toCoinType(base.id) });
-        if (name) {
-          setEnsip19Name(name);
-          setEnsip19Error(null);
-          setL2Name(null);
-          return;
-        }
-      } catch (e) {
-        setEnsip19Error(String(e instanceof Error ? e.message : e));
-      } finally {
-        setLoading(false);
-      }
-      try {
-        setL2Loading(true);
-        const direct = (await baseClient.readContract({
-          address: BASE_L2_REVERSE_REGISTRAR_ADDRESS,
-          abi: L2_REVERSE_REGISTRAR_ABI,
-          functionName: "nameForAddr",
-          args: [address],
-        })) as string;
-        setL2Name(direct && direct.length > 0 ? direct : null);
-      } catch {
-        // ignore
-      } finally {
-        setL2Loading(false);
-      }
-    };
+    // Kick off both lookups in parallel so the L2 card can show regardless of ENSIP-19 result
+    setLoading(true);
+    setL2Loading(true);
 
-    resolve();
+    mainnetClient
+      .getEnsName({ address, coinType: toCoinType(base.id) })
+      .then((primaryNameViaEnsip19) => {
+        setEnsip19Name(primaryNameViaEnsip19 ?? null);
+        setEnsip19Error(null);
+      })
+      .catch((e) => setEnsip19Error(String(e instanceof Error ? e.message : e)))
+      .finally(() => setLoading(false));
+
+    baseClient
+      .readContract({
+        address: BASE_L2_REVERSE_REGISTRAR_ADDRESS,
+        abi: L2_REVERSE_REGISTRAR_ABI,
+        functionName: "nameForAddr",
+        args: [address],
+      })
+      .then((primaryNameViaDirectLookup) => {
+        const val = primaryNameViaDirectLookup as string;
+        setL2Name(val && val.length > 0 ? val : null);
+      })
+      .catch(() => {})
+      .finally(() => setL2Loading(false));
   }, [address]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const display = useMemo(() => {
     if (!mounted) return "…";
     if (!isConnected) return "Connect wallet";
-    return ensip19Name ?? "No primary name";
+    return ensip19Name ?? "No primary name found via ENSIP-19";
   }, [mounted, isConnected, ensip19Name]);
   if (!hydrated) return null;
   const displayIsPlaceholder = display === "…" || display === "Connect wallet" || display === "No primary name";
-  const connectorName = ensip19Name ?? l2Name ?? undefined;
+  // In the OCK connector, we'll override the display name to show the primary name found via ENSIP-19, or the direct lookup in the L2ReverseRegistrar
+  const connectorName = ensip19Name ?? l2NameDirectLookup ?? undefined;
   return (
     <div className={styles.container}>
       <header className={styles.headerWrapper}>
@@ -147,7 +143,13 @@ export default function Home() {
           </div>
 
           <div className={styles.card}>
-            <L2ReverseRegistrarLookup reverseRegistrarAddress={BASE_L2_REVERSE_REGISTRAR_ADDRESS} />
+            <L2ReverseRegistrarLookup
+              reverseRegistrarAddress={BASE_L2_REVERSE_REGISTRAR_ADDRESS}
+              address={address as `0x${string}` | undefined}
+              loading={l2Loading}
+              error={null}
+              name={l2NameDirectLookup}
+            />
           </div>
         </div>
       </div>
