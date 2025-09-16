@@ -19,7 +19,7 @@ const L2_REVERSE_REGISTRAR_ABI = [
   },
 ] as const;
 
-export default function L2ReverseName({ reverseRegistrarAddress, address }: Props) {
+export default function L2ReverseRegistrarLookup({ reverseRegistrarAddress, address }: Props) {
   const acct = useAccount();
   const target = address ?? (acct.address as `0x${string}` | undefined);
 
@@ -66,22 +66,36 @@ export default function L2ReverseName({ reverseRegistrarAddress, address }: Prop
   }, [mounted, target, loading, error, name]);
 
   return (
-    <div style={{ width: "100%", maxWidth: 720, marginTop: 16 }}>
-      <h3 style={{ marginBottom: 8 }}>Direct L2 Reverse (Base)</h3>
-      <p suppressHydrationWarning>{display}</p>
-      <pre
-        style={{
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          background: "#0f172a",
-          color: "#e2e8f0",
-          padding: 12,
-          borderRadius: 8,
-          fontSize: 12,
-        }}
-      >
-        {JSON.stringify({ address: target ?? null, name, error }, null, 2)}
-      </pre>
+    <div>
+      <h3 style={{ marginBottom: 4 }}>Direct lookup in L2ReverseRegistrar (Base)</h3>
+      <div style={{ marginBottom: 8 }}>
+        <a
+          href={`https://basescan.org/address/${reverseRegistrarAddress}`}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "#60a5fa", textDecoration: "none" }}
+        >
+          View contract on Basescan
+        </a>
+      </div>
+      <p suppressHydrationWarning>
+        {display === "…" || display === "Connect wallet" || display === "Loading…" || display.startsWith("Error:") || display === "No L2 reverse" ? (
+          <span style={{ color: "#97a3b6" }}>{display}</span>
+        ) : (
+          <span style={{
+            display: "inline-block",
+            padding: "6px 10px",
+            borderRadius: 9999,
+            background: "linear-gradient(90deg, rgba(0,82,255,0.2), rgba(0,231,255,0.15))",
+            border: "1px solid rgba(0, 82, 255, 0.35)",
+            color: "#e5f0ff",
+            fontWeight: 600,
+            letterSpacing: 0.2,
+          }}>
+            {display}
+          </span>
+        )}
+      </p>
     </div>
   );
 }
